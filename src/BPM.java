@@ -2,115 +2,100 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.LinkedList;
-import java.util.Queue;
-import java.util.Random;
+import java.util.*;
 
-class Graph {
-    public int maxFlow;
-    public int paths;
-    public double time;
-    private Random r = new Random();
+public class BPM {
+
+
     private int k;
+    private int i;
+    private ArrayList<Integer>[] adjList;
     private int[][] capacity;
     private int[][] flow;
     private int[] P;
+    private ArrayList<Integer> ints;
+    private int source;
+    private int sink;
+    private int size;
 
-    Graph(int k) {
+    BPM(int k, int i) {
         this.k = k;
-        capacity = new int[1 << k][k];
-        for (int i = 0; i < (1 << k); i++) {
-            for (int j = 0; j < k; j++) {
-                capacity[i][j] = ((i & (1 << j)) == 0) ? randomize(i, j) : 0;
-            }
+        this.i = i;
+        size = (1 << k) * 2 + 2;
+        source = 0;
+        sink = size - 1;
+        flow = new int[size][size];
+        P = new int[size];
+        ints = new ArrayList<>();
+        for (int j = (1 << k) + 1; j <= (1 << k) * 2; j++) {
+            ints.add(j);
         }
-        flow = new int[1 << k][k];
-        P = new int[1 << k];
-    }
-
-    private int randomize(int number, int index) {
-        return r.nextInt(1 << (Math.max(maxHZ(number), maxHZ(number + 1 << index)))) + 1;
-    }
-
-    private int maxHZ(int i) {
-        i = i - ((i >> 1) & 0x55555555);
-        i = (i & 0x33333333) + ((i >> 2) & 0x33333333);
-        i = (((i + (i >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
-        return Math.max(i, k - i);
+        capacity = new int[size][size];
+        adjList = new ArrayList[size];
+        for (int j = 0; j < size; j++) {
+            adjList[j] = new ArrayList<>();
+        }
+        for (int j = 1; j <= 1 << k; j++) {
+            adjList[0].add(j);
+            adjList[j].add(0);
+            capacity[0][j] = 1;
+            Collections.shuffle(ints);
+            for (int l = 0; l < i; l++) {
+                adjList[j].add(ints.get(l));
+                adjList[ints.get(l)].add(j);
+                capacity[j][ints.get(l)] = 1;
+            }
+            adjList[(1 << k) + j].add(sink);
+            adjList[sink].add((1 << k) + j);
+            capacity[(1 << k) + j][sink] = 1;
+        }
     }
 
     int maxFlow() {
-        long start = System.nanoTime();
         int f = 0;
-        int p = 0;
         while (true) {
             int m = BFS();
             if (m == 0) break;
-            p++;
             f += m;
-            int v = (1 << k) - 1;
-            while (v != 0) {
+            int v = sink;
+            while (v != source) {
                 int u = P[v];
-                int diff = binlog(u ^ v);
-                flow[u][diff] += m;
-                flow[v][diff] -= m;
+                flow[u][v] += m;
+                flow[v][u] -= m;
                 v = u;
             }
         }
-        long stop = System.nanoTime();
-        this.maxFlow = f;
-        this.paths = p;
-        this.time = (stop - start) / 1000000000.0;
         return f;
     }
 
     int BFS() {
-        for (int i = 0; i < (1 << k); i++) {
-            P[i] = -1;
+        for (int j = 0; j < size; j++) {
+            P[j] = -1;
         }
-        P[0] = -2;
-        int[] M = new int[1 << k];
-        M[0] = Integer.MAX_VALUE;
+        //P[source] = -2;
+        int[] M = new int[size];
+        M[source] = Integer.MAX_VALUE;
         Queue<Integer> Q = new LinkedList<>();
-        Q.add(0);
-        while (!Q.isEmpty()) {
+        Q.add(source);
+        while (Q.size() > 0) {
             int u = Q.poll();
-            for (int v = 0; v < k; v++) {
-                int p = (u & (1 << v)) == 0 ? u + (1 << v) : u - (1 << v);
-                if (capacity[u][v] > flow[u][v] && P[p] == -1) {
-                    P[p] = u;
-                    M[p] = Math.min(M[u], capacity[u][v] - flow[u][v]);
-                    if (p != ((1 << k) - 1)) Q.add(p);
-                    else return M[(1 << k) - 1];
+            for (int j = 0; j < adjList[u].size(); j++) {
+                int v = adjList[u].get(j);
+                if (capacity[u][v] - flow[u][v] > 0 && P[v] == -1) {
+                    P[v] = u;
+                    M[v] = Math.min(M[u], capacity[u][v] - flow[u][v]);
+                    if (v != sink)
+                        Q.add(v);
+                    else
+                        return M[sink];
                 }
             }
         }
         return 0;
     }
 
-    int binlog(int bits) {
-        int log = 0;
-        if ((bits & 0xffff0000) != 0) {
-            bits >>>= 16;
-            log = 16;
-        }
-        if (bits >= 256) {
-            bits >>>= 8;
-            log += 8;
-        }
-        if (bits >= 16) {
-            bits >>>= 4;
-            log += 4;
-        }
-        if (bits >= 4) {
-            bits >>>= 2;
-            log += 2;
-        }
-        return log + (bits >>> 1);
-    }
-
     void glpk() {
-        File f = new File("maxflow.mod");
+        File f = new File("maxmatch.mod");
         try {
             FileWriter fileWriter = new FileWriter(f);
             PrintWriter pw = new PrintWriter(fileWriter);
@@ -157,17 +142,14 @@ class Graph {
                     "printf{1..56} \"=\"; printf \"\\n\";\n" +
                     "printf \"Maximum flow from node %s to node %s is %g\\n\\n\", s, t, flow;\n" +
                     "\n" +
-                    "data;\n");
+                    "data;\n\n");
             pw.println();
-            pw.printf("param n := %d;\n", 1 << k);
+            pw.printf("param n := %d;\n", (2 << k) + 2);
             pw.println();
             pw.println("param : E : a :=");
-            for (int i = 0; i < (1 << k); i++) {
-                for (int j = 0; j < k; j++) {
-                    if (capacity[i][j] != 0) {
-                        int s = i + (1 << j) + 1;
-                        pw.printf("  %d %d %d\n", i + 1, s, capacity[i][j]);
-                    }
+            for (int j = 0; j < adjList.length; j++) {
+                for (Integer i : adjList[j]) {
+                    pw.printf("  %d %d %d\n", j + 1, i + 1, 1);
                 }
             }
             pw.println(";\n");
@@ -179,19 +161,26 @@ class Graph {
         }
     }
 
-    void debug(){
-        for(int[] ints: flow){
-            for(int i: ints){
-                System.out.print(i + " ");
+    void printall() {
+        for (int j = 0; j < adjList.length; j++) {
+            for (int l = 0; l < adjList[j].size(); l++) {
+                System.out.print(adjList[j].get(l) + " ");
             }
             System.out.println();
         }
     }
 
+    void printA(int[] ints) {
+        for (int i = 0; i < ints.length; i++) {
+            System.out.print("[" + ints[i] + "]");
+        }
+        System.out.println();
+    }
+
     void printflow() {
-        for (int i = 0; i < capacity.length; i++) {
-            for (int j = 0; j < capacity[i].length; j++) {
-                System.out.print("["+capacity[i][j]+"]");
+        for (int i = 0; i < flow.length; i++) {
+            for (int j = 0; j < flow[i].length; j++) {
+                System.out.print("[" + flow[i][j] + "]");
             }
             System.out.println();
         }
